@@ -22,6 +22,7 @@ huggingface-hub>=0.17.0
 
 # Additional utilities
 tqdm>=4.64.0
+psutil>=5.9.0
 
 # Note: The following are NOT pip installable:
 # ------------------------------------------

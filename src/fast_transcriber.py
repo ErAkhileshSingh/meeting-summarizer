@@ -8,6 +8,14 @@ import os
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import warnings
+import threading
+
+# Try to import psutil for CPU monitoring (optional dependency)
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -128,14 +136,32 @@ class FastTranscriber:
             "language": info.language
         }
     
+    def _get_cpu_utilization(self) -> float:
+        """Get current CPU utilization percentage (0-100)."""
+        if not HAS_PSUTIL:
+            return 50.0  # Assume moderate load if psutil not available
+        try:
+            return psutil.cpu_percent(interval=0.5)
+        except Exception:
+            return 50.0
+    
+    def _should_use_parallel(self) -> bool:
+        """
+        Determine if parallel processing should be used based on CPU utilization.
+        Returns True if CPU has headroom for parallel workers.
+        """
+        cpu_usage = self._get_cpu_utilization()
+        # If CPU is already >70% utilized, faster-whisper is using it well
+        # No benefit from parallel workers, might even slow things down
+        return cpu_usage < 70.0
+    
     def transcribe_parallel(self, chunk_files: list, progress_callback=None) -> dict:
         """
-        Transcribe audio chunks sequentially (faster than parallel for CPU inference).
+        Transcribe audio chunks with adaptive processing strategy.
         
-        Note: Despite the name, sequential processing is faster because:
-        - faster-whisper uses all CPU cores internally
-        - Threading adds overhead without true parallelism
-        - Model inference is CPU-bound, not I/O-bound
+        Automatically chooses between:
+        - Sequential: When CPU is already heavily utilized (>70%)
+        - Parallel: When CPU has headroom, uses configured workers
         
         Args:
             chunk_files: List of paths to audio chunk files
@@ -147,21 +173,50 @@ class FastTranscriber:
         if self.model is None:
             self.load_model(progress_callback)
         
+        # Check CPU utilization to decide processing strategy
+        use_parallel = self._should_use_parallel() and self.num_workers > 1
+        
         if progress_callback:
-            progress_callback(f"Transcribing {len(chunk_files)} chunks...")
+            mode = f"parallel ({self.num_workers} workers)" if use_parallel else "sequential (CPU optimized)"
+            progress_callback(f"Transcribing {len(chunk_files)} chunks [{mode}]...")
         
         all_results = []
         
-        # Process chunks sequentially - faster on CPU
-        for idx, chunk in enumerate(chunk_files):
-            if progress_callback:
-                progress_callback(f"Transcribed {idx}/{len(chunk_files)} chunks...")
+        if use_parallel:
+            # Parallel processing with ThreadPoolExecutor
+            # Create a lock for thread-safe progress updates
+            progress_lock = threading.Lock()
+            completed_count = [0]  # Use list for mutable reference in closure
             
-            try:
-                result = self.transcribe_chunk(chunk)
-                all_results.append(result)
-            except Exception as e:
-                all_results.append({"text": "", "segments": [], "error": str(e)})
+            def process_chunk(chunk_path):
+                result = self.transcribe_chunk(chunk_path)
+                with progress_lock:
+                    completed_count[0] += 1
+                    if progress_callback:
+                        progress_callback(f"Transcribed {completed_count[0]}/{len(chunk_files)} chunks...")
+                return result
+            
+            with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
+                # Submit all tasks and collect results in order
+                futures = [executor.submit(process_chunk, chunk) for chunk in chunk_files]
+                
+                for future in futures:
+                    try:
+                        result = future.result()
+                        all_results.append(result)
+                    except Exception as e:
+                        all_results.append({"text": "", "segments": [], "error": str(e)})
+        else:
+            # Sequential processing - faster when CPU is already fully utilized
+            for idx, chunk in enumerate(chunk_files):
+                if progress_callback:
+                    progress_callback(f"Transcribed {idx}/{len(chunk_files)} chunks...")
+                
+                try:
+                    result = self.transcribe_chunk(chunk)
+                    all_results.append(result)
+                except Exception as e:
+                    all_results.append({"text": "", "segments": [], "error": str(e)})
         
         if progress_callback:
             progress_callback(f"Transcribed {len(chunk_files)}/{len(chunk_files)} chunks...")
