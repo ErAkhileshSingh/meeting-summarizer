@@ -1,0 +1,33 @@
+# Meeting Summary App - Python Dependencies
+# ==========================================
+# Run: pip install -r requirements.txt
+
+# Core ML - Transcription (faster-whisper uses CTranslate2 for 4-8x speedup)
+faster-whisper>=1.0.0
+
+# Summarization Models
+transformers>=4.35.0
+torch>=2.0.0
+sentencepiece>=0.1.99
+
+# Audio Processing
+scipy>=1.11.0
+numpy>=1.24.0
+
+# CTranslate2 backend for faster-whisper
+ctranslate2>=3.17.0
+
+# Huggingface Hub for model downloads
+huggingface-hub>=0.17.0
+
+# Additional utilities
+tqdm>=4.64.0
+
+# Note: The following are NOT pip installable:
+# ------------------------------------------
+# 1. FFmpeg - Required for audio extraction
+#    Download: https://ffmpeg.org/download.html
+#    Windows: Add to PATH after installation
+#
+# 2. Tkinter - Usually included with Python
+#    If missing on Linux: sudo apt-get install python3-tk
