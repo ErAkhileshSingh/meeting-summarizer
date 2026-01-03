@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <files-path name="saved_transcripts" path="saved_transcripts/" />
+    <files-path name="saved_summarys" path="saved_summarys/" />
+    <files-path name="recordings" path="recordings/" />
+    <cache-path name="cache" path="." />
+</paths>

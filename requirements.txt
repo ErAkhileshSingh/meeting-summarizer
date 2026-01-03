@@ -24,6 +24,9 @@ huggingface-hub>=0.17.0
 tqdm>=4.64.0
 psutil>=5.9.0
 
+# Oriserve Hindi/Hinglish model support
+safetensors>=0.4.0
+
 # Note: The following are NOT pip installable:
 # ------------------------------------------
 # 1. FFmpeg - Required for audio extraction

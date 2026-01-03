@@ -164,7 +164,26 @@ class FastVideoSummaryApp:
             state="readonly",
             width=6
         )
-        summary_combo.pack(side=tk.LEFT)
+        summary_combo.pack(side=tk.LEFT, padx=(0, 20))
+        
+        # Transcriber selection (NEW)
+        tk.Label(
+            settings_frame,
+            text="Transcriber:",
+            font=("Segoe UI", 11, "bold"),
+            bg=self.accent_color,
+            fg=self.fg_color
+        ).pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.transcriber_var = tk.StringVar(value="faster-whisper")
+        transcriber_combo = ttk.Combobox(
+            settings_frame,
+            textvariable=self.transcriber_var,
+            values=["faster-whisper", "oriserve-hindi"],
+            state="readonly",
+            width=14
+        )
+        transcriber_combo.pack(side=tk.LEFT)
         
         # Speed indicator
         self.speed_label = tk.Label(
@@ -355,7 +374,7 @@ class FastVideoSummaryApp:
         # ===== Footer =====
         footer = tk.Label(
             main_frame,
-            text="Using faster-whisper (parallel) • BART-large-CNN for summarization",
+            text="faster-whisper (Fast) | Oriserve Hindi/Hinglish (Accurate) • BART-large-CNN for summarization",
             font=("Segoe UI", 9),
             bg=self.bg_color,
             fg="#666666"
@@ -415,11 +434,12 @@ class FastVideoSummaryApp:
         num_workers = int(self.workers_var.get())
         chunk_duration = int(self.chunk_var.get())
         summary_words = int(self.summary_words_var.get())
+        transcriber_type = self.transcriber_var.get()  # NEW: Get selected transcriber
         
         # Process in background thread
         thread = threading.Thread(
             target=self._process_video_thread,
-            args=(self.current_video, model_size, num_workers, chunk_duration, summary_words),
+            args=(self.current_video, model_size, num_workers, chunk_duration, summary_words, transcriber_type),
             daemon=True
         )
         thread.start()
@@ -443,11 +463,10 @@ class FastVideoSummaryApp:
             self.timer_label.configure(text=f"⏱️ {mins:02d}:{secs:02d}")
             self.root.after(1000, self._update_timer)
     
-    def _process_video_thread(self, video_path: str, model_size: str, num_workers: int, chunk_duration: int, summary_words: int = 800):
+    def _process_video_thread(self, video_path: str, model_size: str, num_workers: int, chunk_duration: int, summary_words: int = 800, transcriber_type: str = "faster-whisper"):
         """Process video with optimized pipeline."""
         try:
             from src.video_processor import VideoProcessor
-            from src.fast_transcriber import FastTranscriber
             from src.summarizer import Summarizer
             
             # Check for stop request helper
@@ -486,9 +505,16 @@ class FastVideoSummaryApp:
             self.message_queue.put(("progress", 10))
             check_stop()
             
-            # Step 3: Load transcriber (15%)
-            self.message_queue.put(("status", f"Step 3/5: Loading Whisper {model_size} model..."))
-            transcriber = FastTranscriber(model_size=model_size, num_workers=num_workers)
+            # Step 3: Load transcriber (15%) - CONDITIONAL BASED ON SELECTION
+            if transcriber_type == "oriserve-hindi":
+                from src.oriserve_transcriber import OriserveTranscriber
+                self.message_queue.put(("status", "Step 3/5: Loading Oriserve Hindi/Hinglish model..."))
+                transcriber = OriserveTranscriber()
+            else:
+                from src.fast_transcriber import FastTranscriber
+                self.message_queue.put(("status", f"Step 3/5: Loading Whisper {model_size} model..."))
+                transcriber = FastTranscriber(model_size=model_size, num_workers=num_workers)
+            
             transcriber.load_model(
                 progress_callback=lambda msg: self.message_queue.put(("status", f"Step 3/5: {msg}"))
             )
